@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>תרשים זרימה אינטראקטיבי</title>
+    
+    <!-- Mermaid.js Core -->
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.3.0/dist/mermaid.esm.min.mjs';
+        
+        mermaid.initialize({
+            startOnLoad: false,
+            flowchart: { 
+                useMaxWidth: false, 
+                htmlLabels: false,
+                nodeSpacing: 50,
+                rankSpacing: 50
+            },
+            theme: 'base',
+            themeVariables: {
+                fontFamily: 'Inter, system-ui, sans-serif, Arial',
+                fontSize: '16px',
+                primaryColor: '#ffffff',
+                primaryBorderColor: '#cbd5e1',
+                primaryTextColor: '#1e293b',
+                lineColor: '#64748b',
+                secondaryColor: '#f1f5f9',
+                tertiaryColor: '#e2e8f0',
+                nodeBorder: '#e2e8f0',
+                clusterBkg: '#f8fafc',
+                clusterBorder: '#cbd5e1',
+                edgeLabelBackground: '#ffffff'
+            },
+            themeCSS: `
+                .node rect, .node circle, .node ellipse, .node polygon, .node path {
+                    rx: 8px;
+                    ry: 8px;
+                }
+                .label text {
+                    font-size: 16px;
+                }
+                .node > .label {
+                    padding: 18px 25px !important;
+                }
+            `
+        });
+
+        // Fetch the raw text file from the same directory
+        async function loadAndRender() {
+            try {
+                // To fetch local files without a server, we usually need an HTTP server running.
+                // Assuming this is opened via the http.server running in the background.
+                const response = await fetch('דייטינג.mmd');
+                if (!response.ok) throw new Error("Could not find דייטינג.mmd");
+                
+                const mmdContent = await response.text();
+                
+                // Remove the init json chunk if it exists as it conflicts sometimes in live renders
+                const cleanContent = mmdContent.replace(/%%\{init:.*?\}%%/, '').trim();
+
+                const { svg, bindFunctions } = await mermaid.render('mermaid-svg', cleanContent);
+                const container = document.getElementById('diagram-container');
+                container.innerHTML = svg;
+                
+                if (bindFunctions) bindFunctions(container);
+
+                // Enable Pan & Zoom
+                initPanZoom();
+
+            } catch (error) {
+                console.error(error);
+                document.getElementById('diagram-container').innerHTML = 
+                    `<div style="color:red; text-align:center;"><h2>שגיאה בטעינת הקובץ:</h2><p>${error.message}</p>
+                    <p><small>הערה: מכיוון שמדובר בטעינת קובץ דינמית, חובה לפתוח מסמך זה דרך שרת מקומי (כמו Live Server) ולא בלחיצה כפולה ישירות מהתיקייה.</small></p></div>`;
+            }
+        }
+
+        function initPanZoom() {
+            const svgElement = document.querySelector('#diagram-container svg');
+            if (!svgElement) return;
+            
+            // Adjust SVG styles for zooming
+            svgElement.style.width = '100%';
+            svgElement.style.height = '100%';
+            svgElement.style.maxWidth = 'none';
+
+            // Simple Touch & Scroll Zoom implementation using panzoom library
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js';
+            script.onload = () => {
+                const panzoom = Panzoom(svgElement, {
+                    maxScale: 10,
+                    minScale: 0.1,
+                    contain: 'outside',
+                    step: 0.3
+                });
+
+                // Mouse wheel zooming
+                svgElement.parentElement.addEventListener('wheel', panzoom.zoomWithWheel);
+                
+                // Double tap to reset
+                svgElement.parentElement.addEventListener('dblclick', panzoom.reset);
+            };
+            document.head.appendChild(script);
+        }
+
+        // Initialize when ready
+        document.addEventListener('DOMContentLoaded', loadAndRender);
+    </script>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* Panzoom handles movement */
+            background-color: #f4f4f9;
+            font-family: Arial, sans-serif;
+        }
+
+        #diagram-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: grab;
+        }
+
+        #diagram-container:active {
+            cursor: grabbing;
+        }
+        
+        .toolbar {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .info-button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background-color 0.2s;
+        }
+
+        .info-button:hover {
+            background-color: #2563eb;
+        }
+
+        .info-content {
+            display: none;
+            position: absolute;
+            bottom: 50px;
+            right: 0;
+            background: rgba(255,255,255,0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            width: 280px;
+            text-align: right;
+            border: 1px solid #cbd5e1;
+        }
+
+        .info-content.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="diagram-container">
+        <!-- SVG ירונדר לכאן -->
+        <p>טוען ומייצר תרשים מתוך דייטינג.mmd...</p>
+    </div>
+    
+    <div class="toolbar">
+        <div class="info-content" id="instructionsPanel">
+            <p style="margin: 0 0 8px 0; font-size: 15px; font-weight: bold; color: #1e293b;">הוראות שימוש:</p>
+            <ul style="margin: 0; padding-right: 20px; font-size: 13px; line-height: 1.5; color: #475569;">
+                <li>גלגלת עכבר / צביטה במגע — <b>זום חופשי</b></li>
+                <li>גרירה עם העכבר / מגע — <b>הזזה</b></li>
+                <li>לחיצה כפולה — <b>איפוס תצוגה</b></li>
+                <li>לאחר עדכון הקובץ, פשוט <b>רענן (F5)</b>.</li>
+            </ul>
+        </div>
+        <button class="info-button" onclick="document.getElementById('instructionsPanel').classList.toggle('show')" title="הוראות שימוש">?</button>
+    </div>
+</body>
+</html>
