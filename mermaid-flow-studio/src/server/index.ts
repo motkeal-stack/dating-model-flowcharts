@@ -1,5 +1,5 @@
 import express from "express";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
@@ -28,18 +28,37 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const APP_DIR = path.resolve(__dirname, "..", "..");
-const ROOT_DIR = path.resolve(APP_DIR, "..");
 const DIST_WEB_DIR = path.join(APP_DIR, "dist", "web");
 const WIDGET_URI = "ui://flow-studio/editor-v1.html";
 const APP_NAME = "mermaid-flow-studio";
 const PORT = Number(process.env.PORT ?? 3210);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const IGNORED_DIRS = new Set([".git", "dist", "node_modules", "src", "mermaid-flow-studio"]);
+const ROOT_DIR = resolveFlowsRoot();
 
 type ToolEnvelope =
   | { kind: "snapshot"; snapshot: FlowSnapshot }
   | { kind: "flow-list"; items: FlowListItem[] }
   | { kind: "export"; exportPayload: ExportPayload };
+
+function resolveFlowsRoot(): string {
+  const configured = process.env.FLOW_STUDIO_FLOWS_ROOT?.trim();
+  if (configured) {
+    return path.resolve(configured);
+  }
+
+  const parentDir = path.resolve(APP_DIR, "..");
+  if (path.basename(parentDir).toLowerCase() === "personal-flows") {
+    return parentDir;
+  }
+
+  const siblingFlows = path.join(parentDir, "personal-flows");
+  if (existsSync(siblingFlows)) {
+    return siblingFlows;
+  }
+
+  return parentDir;
+}
 
 const app = createMcpExpressApp({ host: HOST });
 app.use(express.json({ limit: "2mb" }));
