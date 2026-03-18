@@ -48,63 +48,56 @@ graph TD
     Step3Field["למידה של השטח הלא מוכר"]
 
     %% =====================================
-    %% 2. מבני ערוצים וסידור אופקי (ימין לשמאל)
+    %% 2. יצירת החיבורים והחצים - סדר הדפסה (שמאל לימין)
     %% =====================================
     Start --> Channels
     
-    subgraph ChannelA [" "]
-        direction TD
-        Apps --> AppEffort
-        AppEffort --> AppsStatus
-        AppsStatus --> Fomo
-        AppsStatus --> Texts
-        AppsStatus --> Img
-        Img --> ImgDetail
-        Texts --> TextsDetail
-        Fomo --> FomoDetail
-        AppsStatus --> Exhaustion
-    end
-
-    subgraph ChannelB [" "]
-        direction TD
-        Cold --> Barrier
-        Barrier --> FearLooks
-        Barrier --> FomoBar
-        Barrier --> NotReady
-        FearLooks --> B11
-        FearLooks --> B12
-        FearLooks --> B13
-        FearLooks --> B14
-        B13 --> B131
-        NotReady --> NR1
-        NotReady --> NR2
-        NotReady --> NR3
-        FomoBar --> B21
-        FomoBar --> B22
-    end
-
-    subgraph ChannelC [" "]
-        direction TD
-        Natural --> NatExamples
-        NatExamples --> Strategy
-        
-        %% אסטרטגיה
-        Strategy --> Step1
-        Step1 -->|"פינג פונג"| Step1Goal
-        Step1Goal -->|"הצלחה"| Step2
-        Step2 --> Step2Strategy
-        Step2Strategy -->|"הצלחה"| Step3
-        Step3 --> Step3Field
-    end
-
-    %% חיבור הערוצים מבלוק הבחירה
-    Channels -->|"ערוץ א"| Apps
-    Channels -->|"ערוץ ב"| Cold
+    %% הכרזת החיבורים מ-Channels לפי סדר ההופעה במרחב השמאלי לימני (ג -> ב -> א)
     Channels -->|"ערוץ ג - מועדף"| Natural
+    Channels -->|"ערוץ ב"| Cold
+    Channels -->|"ערוץ א"| Apps
 
-    %% קישורים שקופים רק בין הסאבגרפים עצמם כדי להכריח את הסדר (א' בימין, ג' בשמאל)
-    ChannelA ~~~ ChannelB
-    ChannelB ~~~ ChannelC
+    %% -- פירוט ערוץ א (הימני ביותר) --
+    Apps --> AppEffort
+    AppEffort --> AppsStatus
+    AppsStatus --> Fomo
+    AppsStatus --> Texts
+    AppsStatus --> Img
+    Img --> ImgDetail
+    Texts --> TextsDetail
+    Fomo --> FomoDetail
+    AppsStatus --> Exhaustion
+
+    %% -- פירוט ערוץ ב (האמצעי) --
+    Cold --> Barrier
+    Barrier --> FearLooks
+    Barrier --> FomoBar
+    Barrier --> NotReady
+    FearLooks --> B11
+    FearLooks --> B12
+    FearLooks --> B13
+    FearLooks --> B14
+    B13 --> B131
+    NotReady --> NR1
+    NotReady --> NR2
+    NotReady --> NR3
+    FomoBar --> B21
+    FomoBar --> B22
+
+    %% -- פירוט ערוץ ג (השמאלי ביותר) --
+    Natural --> NatExamples
+    NatExamples --> Strategy
+    Strategy --> Step1
+    Step1 -->|"פינג פונג"| Step1Goal
+    Step1Goal -->|"הצלחה"| Step2
+    Step2 --> Step2Strategy
+    Step2Strategy -->|"הצלחה"| Step3
+    Step3 --> Step3Field
+
+    %% קישורים שקופים רק בין צמתים ספציפיים כדי להכריח סדר גובה/רוחב
+    %% מסדר משמאל לימין: ערוץ ג, ואז ב, ואז א
+    NatExamples ~~~ FomoBar
+    FomoBar ~~~ Img
 
     %% =====================================
     %% 3. עיצוב וסטיילינג (CSS)
@@ -116,13 +109,8 @@ graph TD
     classDef primaryAction fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1d4ed8,rx:8px,ry:8px;
     classDef painPoint fill:#fef2f2,stroke:#ef4444,stroke-width:2px,color:#b91c1c,rx:8px,ry:8px;
     classDef mainNode fill:#f8fafc,stroke:#94a3b8,stroke-width:3px,color:#0f172a,rx:12px,ry:12px;
-    classDef invisible background:none,fill:none,stroke:none,color:transparent;
 
     class Start mainNode;
     class Natural highlighted;
     class Step1,Step2,Step3 primaryAction;
     class Barrier,AppsStatus,FearLooks,NotReady,FomoBar painPoint;
-    class ChannelA,ChannelB,ChannelC invisible;
-
-    %% הכרחת מרחק רוחבי נוסף למבנה
-    linkStyle 0,1 stroke-width:0px;

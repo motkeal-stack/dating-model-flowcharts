@@ -1,0 +1,46 @@
+{
+  "name": "personal-flows",
+  "version": "1.0.0",
+  "description": "ברוך הבא לריפו של התזרים (Flows) האישיים שלי! כאן מרוכזים כל מסמכי התזרים, התרשימים וקטעי הקוד הקשורים לתהליכים שונים שאני בונה.",
+  "main": "dist/server/index.js",
+  "scripts": {
+    "clean": "node -e \"const fs=require('node:fs'); fs.rmSync('dist',{recursive:true,force:true});\"",
+    "build:web": "esbuild src/web/index.tsx --bundle --format=esm --target=es2022 --outfile=dist/web/flow-studio.js --loader:.css=css",
+    "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server/index.js --external:express --external:@modelcontextprotocol/sdk --external:@modelcontextprotocol/ext-apps --external:mermaid --external:react --external:react-dom --external:@panzoom/panzoom --external:zod",
+    "build": "npm run clean && npm run build:web && npm run build:server",
+    "dev": "npm run build:web && tsx src/server/index.ts",
+    "start": "node dist/server/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/motkeal-stack/dating-model-flowcharts.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/motkeal-stack/dating-model-flowcharts/issues"
+  },
+  "homepage": "https://github.com/motkeal-stack/dating-model-flowcharts#readme",
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.2.2",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@panzoom/panzoom": "^4.6.1",
+    "express": "^5.2.1",
+    "mermaid": "^11.13.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "esbuild": "^0.27.4",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

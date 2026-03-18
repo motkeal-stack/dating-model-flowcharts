@@ -3,39 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>תרשים זרימה אינטראקטיבי</title>
-    
-    <!-- Mermaid.js Core -->
+    <title>מציג תרשימי Mermaid</title>
+    <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
     <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.3.0/dist/mermaid.esm.min.mjs';
-        
+        import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";
+
         mermaid.initialize({
             startOnLoad: false,
-            flowchart: { 
-                useMaxWidth: false, 
+            flowchart: {
+                useMaxWidth: false,
                 htmlLabels: false,
                 nodeSpacing: 50,
                 rankSpacing: 50
             },
-            theme: 'base',
+            theme: "base",
             themeVariables: {
-                fontFamily: 'Inter, system-ui, sans-serif, Arial',
-                fontSize: '16px',
-                primaryColor: '#ffffff',
-                primaryBorderColor: '#cbd5e1',
-                primaryTextColor: '#1e293b',
-                lineColor: '#64748b',
-                secondaryColor: '#f1f5f9',
-                tertiaryColor: '#e2e8f0',
-                nodeBorder: '#e2e8f0',
-                clusterBkg: '#f8fafc',
-                clusterBorder: '#cbd5e1',
-                edgeLabelBackground: '#ffffff'
+                fontFamily: "Heebo, Assistant, Segoe UI, sans-serif",
+                fontSize: "16px",
+                primaryColor: "#ffffff",
+                primaryBorderColor: "#cbd5e1",
+                primaryTextColor: "#1e293b",
+                lineColor: "#64748b",
+                secondaryColor: "#f8fafc",
+                tertiaryColor: "#e2e8f0",
+                nodeBorder: "#e2e8f0",
+                clusterBkg: "#f8fafc",
+                clusterBorder: "#cbd5e1",
+                edgeLabelBackground: "#ffffff"
             },
             themeCSS: `
                 .node rect, .node circle, .node ellipse, .node polygon, .node path {
-                    rx: 8px;
-                    ry: 8px;
+                    rx: 10px;
+                    ry: 10px;
                 }
                 .label text {
                     font-size: 16px;
@@ -46,157 +45,622 @@
             `
         });
 
-        // Fetch the raw text file from the same directory
-        async function loadAndRender() {
+        const DEFAULT_FILE = "דייטינג.mmd";
+        const state = {
+            currentFileName: DEFAULT_FILE,
+            currentMode: "remote",
+            panzoom: null,
+            renderCount: 0,
+            localFileHandle: null
+        };
+
+        const refs = {};
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            cacheElements();
+            bindEvents();
+
             try {
-                // To fetch local files without a server, we usually need an HTTP server running.
-                // Assuming this is opened via the http.server running in the background.
-                const response = await fetch('דייטינג.mmd');
-                if (!response.ok) throw new Error("Could not find דייטינג.mmd");
-                
-                const mmdContent = await response.text();
-                
-                // Remove the init json chunk if it exists as it conflicts sometimes in live renders
-                const cleanContent = mmdContent.replace(/%%\{init:.*?\}%%/, '').trim();
-
-                const { svg, bindFunctions } = await mermaid.render('mermaid-svg', cleanContent);
-                const container = document.getElementById('diagram-container');
-                container.innerHTML = svg;
-                
-                if (bindFunctions) bindFunctions(container);
-
-                // Enable Pan & Zoom
-                initPanZoom();
-
+                await loadRemoteDiagram(getRequestedFileName());
             } catch (error) {
-                console.error(error);
-                document.getElementById('diagram-container').innerHTML = 
-                    `<div style="color:red; text-align:center;"><h2>שגיאה בטעינת הקובץ:</h2><p>${error.message}</p>
-                    <p><small>הערה: מכיוון שמדובר בטעינת קובץ דינמית, חובה לפתוח מסמך זה דרך שרת מקומי (כמו Live Server) ולא בלחיצה כפולה ישירות מהתיקייה.</small></p></div>`;
+                showError(error);
             }
+        });
+
+        function cacheElements() {
+            refs.viewport = document.getElementById("diagram-viewport");
+            refs.diagramContainer = document.getElementById("diagram-container");
+            refs.currentFile = document.getElementById("currentFile");
+            refs.sourceBadge = document.getElementById("sourceBadge");
+            refs.statusText = document.getElementById("statusText");
+            refs.refreshHint = document.getElementById("refreshHint");
+            refs.zoomLabel = document.getElementById("zoomLabel");
+            refs.helpPanel = document.getElementById("helpPanel");
+            refs.filePicker = document.getElementById("filePicker");
+        }
+
+        function bindEvents() {
+            document.getElementById("openFileButton").addEventListener("click", () => {
+                refs.filePicker.click();
+            });
+
+            document.getElementById("reloadButton").addEventListener("click", async () => {
+                try {
+                    if (state.currentMode === "local" && state.localFileHandle) {
+                        const content = await state.localFileHandle.text();
+                        await renderDiagram(content, state.localFileHandle.name);
+                        refs.sourceBadge.textContent = "קובץ מקומי";
+                        setStatus(`הקובץ המקומי ${state.localFileHandle.name} נטען מחדש.`);
+                        return;
+                    }
+
+                    await loadRemoteDiagram(state.currentFileName);
+                } catch (error) {
+                    showError(error);
+                }
+            });
+
+            document.getElementById("zoomInButton").addEventListener("click", () => {
+                state.panzoom?.zoomIn();
+                updateZoomLabel();
+            });
+
+            document.getElementById("zoomOutButton").addEventListener("click", () => {
+                state.panzoom?.zoomOut();
+                updateZoomLabel();
+            });
+
+            document.getElementById("resetViewButton").addEventListener("click", () => {
+                resetView();
+            });
+
+            document.getElementById("helpButton").addEventListener("click", () => {
+                refs.helpPanel.hidden = !refs.helpPanel.hidden;
+            });
+
+            refs.filePicker.addEventListener("change", async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+
+                try {
+                    state.currentMode = "local";
+                    state.localFileHandle = file;
+                    const content = await file.text();
+                    await renderDiagram(content, file.name);
+                    refs.sourceBadge.textContent = "קובץ מקומי";
+                    refs.refreshHint.textContent = "אם שמרת שינויים על הדיסק, בחר שוב את הקובץ המקומי כדי לרענן אותו.";
+                    setStatus(`הקובץ המקומי ${file.name} נטען בהצלחה.`);
+                } catch (error) {
+                    showError(error);
+                } finally {
+                    refs.filePicker.value = "";
+                }
+            });
+
+            refs.viewport.addEventListener("wheel", (event) => {
+                if (!state.panzoom) return;
+                state.panzoom.zoomWithWheel(event);
+                updateZoomLabel();
+            }, { passive: false });
+
+            window.addEventListener("keydown", (event) => {
+                if (event.target instanceof HTMLInputElement) return;
+
+                if (event.key === "+" || event.key === "=") {
+                    event.preventDefault();
+                    state.panzoom?.zoomIn();
+                    updateZoomLabel();
+                } else if (event.key === "-") {
+                    event.preventDefault();
+                    state.panzoom?.zoomOut();
+                    updateZoomLabel();
+                } else if (event.key === "0") {
+                    event.preventDefault();
+                    resetView();
+                } else if (event.key.toLowerCase() === "r" && !event.ctrlKey && !event.metaKey) {
+                    event.preventDefault();
+                    document.getElementById("reloadButton").click();
+                }
+            });
+        }
+
+        function getRequestedFileName() {
+            const requested = new URLSearchParams(window.location.search).get("file");
+            return requested ? requested.trim() : DEFAULT_FILE;
+        }
+
+        function updateUrl(fileName) {
+            const url = new URL(window.location.href);
+            if (!fileName || fileName === DEFAULT_FILE) {
+                url.searchParams.delete("file");
+            } else {
+                url.searchParams.set("file", fileName);
+            }
+
+            window.history.replaceState({}, "", url);
+        }
+
+        async function loadRemoteDiagram(fileName) {
+            setStatus(`טוען את ${fileName}...`, "loading");
+
+            const response = await fetch(encodeURI(fileName), { cache: "no-store" });
+            if (!response.ok) {
+                throw new Error(`לא הצלחתי למצוא את "${fileName}". ודא שהקובץ נמצא בתיקייה ושפתחת דרך open_viewer.bat.`);
+            }
+
+            const content = await response.text();
+            state.currentMode = "remote";
+            state.localFileHandle = null;
+            refs.sourceBadge.textContent = "שרת מקומי";
+            refs.refreshHint.textContent = "אחרי כל שמירה של קובץ Mermaid, פשוט רענן את העמוד או לחץ על רענון.";
+            updateUrl(fileName);
+            await renderDiagram(content, fileName);
+            setStatus(`התרשים ${fileName} נטען בהצלחה.`);
+        }
+
+        async function renderDiagram(content, fileName) {
+            const cleanContent = normalizeDiagram(content);
+            if (!cleanContent) {
+                throw new Error("קובץ Mermaid ריק.");
+            }
+
+            const renderId = `mermaid-svg-${++state.renderCount}`;
+            const { svg, bindFunctions } = await mermaid.render(renderId, cleanContent);
+            refs.diagramContainer.innerHTML = svg;
+            state.currentFileName = fileName;
+            refs.currentFile.textContent = fileName;
+            document.title = `תרשים זרימה - ${fileName}`;
+
+            if (bindFunctions) {
+                bindFunctions(refs.diagramContainer);
+            }
+
+            initPanZoom();
+        }
+
+        function normalizeDiagram(content) {
+            return content
+                .replace(/^\uFEFF/, "")
+                .replace(/\r\n/g, "\n")
+                .trim();
         }
 
         function initPanZoom() {
-            const svgElement = document.querySelector('#diagram-container svg');
+            const svgElement = refs.diagramContainer.querySelector("svg");
             if (!svgElement) return;
-            
-            // Adjust SVG styles for zooming
-            svgElement.style.width = '100%';
-            svgElement.style.height = '100%';
-            svgElement.style.maxWidth = 'none';
 
-            // Simple Touch & Scroll Zoom implementation using panzoom library
-            const script = document.createElement('script');
-            script.src = 'https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js';
-            script.onload = () => {
-                const panzoom = Panzoom(svgElement, {
-                    maxScale: 10,
-                    minScale: 0.1,
-                    contain: 'outside',
-                    step: 0.3
-                });
+            if (state.panzoom?.destroy) {
+                state.panzoom.destroy();
+            }
 
-                // Mouse wheel zooming
-                svgElement.parentElement.addEventListener('wheel', panzoom.zoomWithWheel);
-                
-                // Double tap to reset
-                svgElement.parentElement.addEventListener('dblclick', panzoom.reset);
-            };
-            document.head.appendChild(script);
+            svgElement.style.width = "100%";
+            svgElement.style.height = "100%";
+            svgElement.style.maxWidth = "none";
+            svgElement.style.maxHeight = "none";
+
+            state.panzoom = Panzoom(svgElement, {
+                maxScale: 8,
+                minScale: 0.2,
+                contain: "outside",
+                step: 0.25,
+                cursor: "grab"
+            });
+
+            resetView(true);
         }
 
-        // Initialize when ready
-        document.addEventListener('DOMContentLoaded', loadAndRender);
-    </script>
+        function resetView(preferReadableScale = false) {
+            if (!state.panzoom) return;
 
+            state.panzoom.reset();
+
+            if (preferReadableScale) {
+                const svgElement = refs.diagramContainer.querySelector("svg");
+                const viewBox = svgElement?.viewBox?.baseVal;
+
+                if (viewBox?.width && viewBox?.height) {
+                    const viewportWidth = Math.max(refs.viewport.clientWidth - 80, 320);
+                    const viewportHeight = Math.max(refs.viewport.clientHeight - 80, 240);
+                    const fitScale = Math.min(viewportWidth / viewBox.width, viewportHeight / viewBox.height);
+                    const readableScale = Math.max(0.9, Math.min(2, fitScale * 1.5));
+
+                    if (Number.isFinite(readableScale) && readableScale !== 1) {
+                        state.panzoom.zoom(readableScale);
+                    }
+                }
+            }
+
+            updateZoomLabel();
+        }
+
+        function updateZoomLabel() {
+            const scale = typeof state.panzoom?.getScale === "function" ? state.panzoom.getScale() : 1;
+            refs.zoomLabel.textContent = `${Math.round(scale * 100)}%`;
+        }
+
+        function setStatus(message, mode = "ready") {
+            refs.statusText.textContent = message;
+            refs.statusText.dataset.mode = mode;
+        }
+
+        function showError(error) {
+            console.error(error);
+
+            refs.diagramContainer.innerHTML = `
+                <div class="error-card">
+                    <h2>שגיאה בטעינת התרשים</h2>
+                    <p>${escapeHtml(error.message)}</p>
+                    <p class="error-tip">בדוק שהקובץ נמצא באותה תיקייה, ופתח את המציג דרך <strong>open_viewer.bat</strong> כדי שהשרת המקומי יהיה זמין.</p>
+                </div>
+            `;
+
+            setStatus("התרשים לא נטען. בדוק את הקובץ או את השרת המקומי.", "error");
+        }
+
+        function escapeHtml(text) {
+            return text
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll("\"", "&quot;")
+                .replaceAll("'", "&#39;");
+        }
+    </script>
     <style>
-        body, html {
+        :root {
+            color-scheme: light;
+            --bg: linear-gradient(135deg, #eef4ff 0%, #f8fbff 40%, #f8fafc 100%);
+            --panel: rgba(255, 255, 255, 0.88);
+            --panel-border: rgba(148, 163, 184, 0.24);
+            --text: #10233d;
+            --muted: #52637a;
+            --brand: #2563eb;
+            --brand-soft: #dbeafe;
+            --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
             margin: 0;
-            padding: 0;
             width: 100%;
             height: 100%;
-            overflow: hidden; /* Panzoom handles movement */
-            background-color: #f4f4f9;
-            font-family: Arial, sans-serif;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Heebo, Assistant, "Segoe UI", sans-serif;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 28%),
+                radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.10), transparent 24%);
+            pointer-events: none;
+        }
+
+        .app-shell {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-rows: auto auto 1fr;
+            padding: 18px;
+            gap: 12px;
+        }
+
+        .topbar,
+        .statusbar,
+        .help-panel {
+            position: relative;
+            z-index: 2;
+            border: 1px solid var(--panel-border);
+            background: var(--panel);
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow);
+        }
+
+        .topbar {
+            border-radius: 22px;
+            padding: 16px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+        }
+
+        .title-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .eyebrow {
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .title-group h1 {
+            margin: 0;
+            font-size: clamp(20px, 2.2vw, 30px);
+            line-height: 1.1;
+        }
+
+        .meta-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 34px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(255, 255, 255, 0.82);
+            color: var(--text);
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        #sourceBadge {
+            background: var(--brand-soft);
+            color: #1d4ed8;
+            border-color: transparent;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 14px;
+            min-height: 42px;
+            padding: 0 14px;
+            cursor: pointer;
+            font: inherit;
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+            transition: transform 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            background: #ffffff;
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.10);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .primary-button {
+            background: linear-gradient(135deg, #2563eb, #0ea5e9);
+            color: #ffffff;
+        }
+
+        .icon-button,
+        .zoom-button {
+            min-width: 42px;
+            padding: 0;
+            font-size: 20px;
+        }
+
+        #zoomLabel {
+            min-width: 72px;
+            text-align: center;
+        }
+
+        .statusbar {
+            border-radius: 18px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        #statusText[data-mode="loading"] {
+            color: #1d4ed8;
+        }
+
+        #statusText[data-mode="error"] {
+            color: #b91c1c;
+        }
+
+        .help-panel {
+            position: absolute;
+            top: 118px;
+            left: 18px;
+            width: min(340px, calc(100vw - 36px));
+            border-radius: 20px;
+            padding: 18px;
+        }
+
+        .help-panel h2 {
+            margin: 0 0 12px;
+            font-size: 18px;
+        }
+
+        .help-panel ul {
+            margin: 0;
+            padding-right: 18px;
+            color: var(--muted);
+            line-height: 1.7;
+        }
+
+        #diagram-viewport {
+            position: relative;
+            z-index: 1;
+            border-radius: 28px;
+            overflow: hidden;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background:
+                radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.92) 55%),
+                linear-gradient(180deg, rgba(241, 245, 249, 0.86), rgba(255, 255, 255, 0.92));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), var(--shadow);
+        }
+
+        #diagram-viewport::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+            background-size: 26px 26px;
+            pointer-events: none;
         }
 
         #diagram-container {
-            width: 100vw;
-            height: 100vh;
+            position: relative;
+            width: 100%;
+            height: 100%;
             display: flex;
-            justify-content: center;
             align-items: center;
+            justify-content: center;
+            overflow: hidden;
             cursor: grab;
+            padding: 28px;
         }
 
         #diagram-container:active {
             cursor: grabbing;
         }
-        
-        .toolbar {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-        }
 
-        .info-button {
-            background-color: #3b82f6;
-            color: white;
-            border: none;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            font-size: 20px;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            transition: background-color 0.2s;
-        }
-
-        .info-button:hover {
-            background-color: #2563eb;
-        }
-
-        .info-content {
-            display: none;
-            position: absolute;
-            bottom: 50px;
-            right: 0;
-            background: rgba(255,255,255,0.95);
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-            width: 280px;
-            text-align: right;
-            border: 1px solid #cbd5e1;
-        }
-
-        .info-content.show {
+        #diagram-container svg {
             display: block;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .loading-card,
+        .error-card {
+            width: min(620px, calc(100vw - 80px));
+            padding: 24px;
+            border-radius: 24px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+            text-align: center;
+        }
+
+        .loading-card {
+            color: var(--muted);
+            font-size: 16px;
+        }
+
+        .error-card h2 {
+            margin: 0 0 10px;
+            color: #991b1b;
+        }
+
+        .error-card p {
+            margin: 0;
+            color: #475569;
+            line-height: 1.7;
+        }
+
+        .error-tip {
+            margin-top: 10px !important;
+            font-size: 14px;
+        }
+
+        @media (max-width: 900px) {
+            .app-shell {
+                padding: 12px;
+            }
+
+            .topbar,
+            .statusbar {
+                border-radius: 18px;
+            }
+
+            .topbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .controls {
+                justify-content: flex-start;
+            }
+
+            .statusbar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .help-panel {
+                top: 182px;
+                left: 12px;
+            }
         }
     </style>
 </head>
 <body>
-    <div id="diagram-container">
-        <!-- SVG ירונדר לכאן -->
-        <p>טוען ומייצר תרשים מתוך דייטינג.mmd...</p>
-    </div>
-    
-    <div class="toolbar">
-        <div class="info-content" id="instructionsPanel">
-            <p style="margin: 0 0 8px 0; font-size: 15px; font-weight: bold; color: #1e293b;">הוראות שימוש:</p>
-            <ul style="margin: 0; padding-right: 20px; font-size: 13px; line-height: 1.5; color: #475569;">
-                <li>גלגלת עכבר / צביטה במגע — <b>זום חופשי</b></li>
-                <li>גרירה עם העכבר / מגע — <b>הזזה</b></li>
-                <li>לחיצה כפולה — <b>איפוס תצוגה</b></li>
-                <li>לאחר עדכון הקובץ, פשוט <b>רענן (F5)</b>.</li>
-            </ul>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="title-group">
+                <div class="eyebrow">Personal Flows</div>
+                <h1>מציג תרשימי Mermaid ל-Chrome</h1>
+                <div class="meta-row">
+                    <span class="chip" id="currentFile">דייטינג.mmd</span>
+                    <span class="chip" id="sourceBadge">שרת מקומי</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="primary-button" id="openFileButton" type="button">פתח קובץ</button>
+                <button id="reloadButton" type="button">רענון</button>
+                <button class="zoom-button" id="zoomOutButton" type="button" aria-label="הקטן">-</button>
+                <span class="chip" id="zoomLabel">100%</span>
+                <button class="zoom-button" id="zoomInButton" type="button" aria-label="הגדל">+</button>
+                <button id="resetViewButton" type="button">איפוס תצוגה</button>
+                <button class="icon-button" id="helpButton" type="button" aria-label="עזרה">?</button>
+            </div>
+        </header>
+
+        <div class="statusbar">
+            <span id="statusText" data-mode="loading">טוען את התרשים...</span>
+            <span id="refreshHint">אחרי כל שמירה של קובץ Mermaid, פשוט רענן את העמוד או לחץ על רענון.</span>
         </div>
-        <button class="info-button" onclick="document.getElementById('instructionsPanel').classList.toggle('show')" title="הוראות שימוש">?</button>
+
+        <aside class="help-panel" id="helpPanel" hidden>
+            <h2>הוראות שימוש</h2>
+            <ul>
+                <li>לחיצה כפולה על <code>open_viewer.bat</code> תפתח את התרשים ב-Chrome דרך שרת מקומי.</li>
+                <li>אפשר לגרור קובץ <code>.mmd</code> על <code>open_viewer.bat</code> כדי לפתוח תרשים אחר ישר מהתיקייה.</li>
+                <li>גלגלת עכבר או צביטה במגע מבצעות זום, גרירה מזיזה, ו"איפוס תצוגה" מחזיר להתחלה.</li>
+                <li>אם בחרת קובץ מקומי דרך "פתח קובץ", לשינויים חדשים בדיסק צריך לבחור אותו שוב.</li>
+            </ul>
+        </aside>
+
+        <main id="diagram-viewport">
+            <div id="diagram-container">
+                <div class="loading-card">טוען ומייצר את התרשים...</div>
+            </div>
+        </main>
     </div>
+
+    <input id="filePicker" type="file" accept=".mmd,.mermaid,.txt" hidden>
 </body>
 </html>
